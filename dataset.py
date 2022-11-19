@@ -7,8 +7,23 @@ import numpy as np
 
 
 class DatasetLoader(object):
-    def __init__(self, path):
-        self.path = path
+    def __init__(self, adjust_gama, brightness_range, randomShiftScaleRotate, rescale=1./255, horizontal_flip=False):
+        self.adjust_gamma = adjust_gama
+        self.brightness_range = brightness_range
+        self.rescale = rescale
+        self.horizontal_flip = horizontal_flip
+        self.randomShiftScaleRotate = randomShiftScaleRotate
+
+    def flow_from_directory(self, path, batch_size, target_size=(None, None)):
+        pass
+
+
+    @staticmethod
+    def adjust_gamma(image, gamma=(0.2, 1.0)):
+        invGamma = 1.0 / np.random.uniform(gamma[0], gamma[1])
+        table = np.array([((i / 255.0) ** invGamma) * 255
+                          for i in np.arange(0, 256)]).astype("uint8")
+        return cv2.LUT(image, table)
 
     @staticmethod
     def brightness_range(image, range=(0.2, 1.0)):
@@ -17,9 +32,9 @@ class DatasetLoader(object):
 
         value = np.random.uniform(range[0], range[1])
 
-        lim = 255 - 30
+        lim = 255 - (value * 100)
         v[v > lim] = 255
-        v[v <= lim] += 30
+        v[v <= lim] += int(value * 100)
 
         final_hsv = cv2.merge((h, s, v))
 
