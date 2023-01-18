@@ -39,13 +39,13 @@ class Utils(object):
                     if image_name.endswith(ext):
                         img = cv2.imread(sub_dir_path + "/" + image_name, cv2.IMREAD_GRAYSCALE)
                         masks.append(img)
-                new_mask = Utils.mapcolors(masks)
+                new_mask = Utils.map_colors(masks)
                 new_mask = cv2.cvtColor(new_mask, cv2.COLOR_RGB2GRAY)
 
         return new_mask
 
     @staticmethod
-    def mapcolors(x, **kwagers) -> np.array:
+    def map_colors(x, **kwargs) -> np.array:
         combined_im = 0
         for index, image in enumerate(x):
             mask = np.stack((image,) * 3, -1)
@@ -53,7 +53,7 @@ class Utils(object):
             mask[mask_rows, mask_cols, :] = COLOR_MAP[index]
             combined_im += mask
 
-        if kwagers.get("visualize"):
+        if kwargs.get("visualize"):
             b, g, r = cv2.split(combined_im)
             fig = plt.figure(figsize=(12, 3))
             ax1 = fig.add_subplot(1, 3, 1)
