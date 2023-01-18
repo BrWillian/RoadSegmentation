@@ -5,10 +5,11 @@ import cv2
 from typing import Any
 
 COLOR_MAP = [
-    [128, 0, 0], [0, 128, 0], [128, 128, 0],
+    [0, 0, 0], [128, 0, 0], [0, 128, 0], [128, 128, 0],
 ]
 
 CLASSES = [
+    "background"
     "POTHOLE",
     "ASPHALT",
     "CRACK"
@@ -40,14 +41,32 @@ class Utils(object):
                         img = cv2.imread(sub_dir_path + "/" + image_name, cv2.IMREAD_GRAYSCALE)
                         masks.append(img)
                 new_mask = Utils.map_colors(masks)
-                new_mask = cv2.cvtColor(new_mask, cv2.COLOR_RGB2GRAY)
 
         return new_mask
 
     @staticmethod
+    def rgb_to_onehot(rgb_image):
+        colormap = {k: v for k, v in enumerate(COLOR_MAP)}
+        num_classes = len(colormap)
+        shape = rgb_image.shape[:2] + (num_classes,)
+        encoded_image = np.zeros(shape, dtype=np.int8)
+        for i, cls in enumerate(colormap):
+            encoded_image[:, :, i] = np.all(rgb_image.reshape((-1, 3)) == colormap[i], axis=1).reshape(shape[:2])
+        return encoded_image
+
+    @staticmethod
+    def onehot_to_rgb(onehot):
+        colormap = {k: v for k, v in enumerate(COLOR_MAP)}
+        single_layer = np.argmax(onehot, axis=-1)
+        output = np.zeros(onehot.shape[:2] + (3,))
+        for k in colormap.keys():
+            output[single_layer == k] = colormap[k]
+        return np.uint8(output)
+
+    @staticmethod
     def map_colors(x, **kwargs) -> np.array:
         combined_im = 0
-        for index, image in enumerate(x):
+        for index, image in enumerate(x, start=1):
             mask = np.stack((image,) * 3, -1)
             mask_rows, mask_cols = np.where(mask[:, :, 1] == 255)
             mask[mask_rows, mask_cols, :] = COLOR_MAP[index]
