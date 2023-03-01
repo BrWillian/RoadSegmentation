@@ -1,86 +1,170 @@
 import os
 import numpy as np
-import matplotlib.pyplot as plt
+from natsort import natsorted
 import cv2
-from typing import Any
 
 COLOR_MAP = [
-    [0, 0, 0], [128, 0, 0], [0, 128, 0], [128, 128, 0],
+    (0, 0, 0),
+    (0, 255, 64),
+    (0, 64, 255),
+    (255, 64, 0),
 ]
 
 CLASSES = [
-    "background"
-    "POTHOLE",
+    "NONE"
     "ASPHALT",
+    "POTHOLE",
     "CRACK"
 ]
 
+ALL_IMAGE_EXTENSIONS = ('.jpg', '.jpeg', '.png')
 
-class Utils(object):
+
+class Utils:
     @staticmethod
-    def get_imgs_from_directory(path: str) -> list:
-        data = []
-        extensions = ('.jpg', '.jpeg', '.png')
+    def get_imgs_from_directory(directory_path: str, sort: bool = False) -> list:
+        """
+        Return a list of image filenames in a directory and its subdirectories.
 
-        for root, path, files in os.walk(path):
+        Args:
+            directory_path (str): Path to the directory containing the images.
+            sort (bool, optional): If True, sort the filenames in natural order. Defaults to False.
+
+        Returns:
+            list: List of image filenames.
+        """
+        image_filenames = []
+        for root, _, files in os.walk(directory_path):
             for filename in files:
-                if filename.endswith(extensions):
-                    data.append(filename)
+                if filename.lower().endswith(ALL_IMAGE_EXTENSIONS):
+                    image_filenames.append(os.path.join(root, filename))
 
-        return data
+        if sort:
+            image_filenames = natsorted(image_filenames)
+
+        return image_filenames
 
     @staticmethod
-    def get_mask_from_directory(path: str, ext: str = '.png') -> np.array:
-        new_mask = None
+    def write_final_mask_from_directory(path: str, ext: str = ".png") -> None:
+        """
+        Generate a final mask by merging three different types of binary masks (mask_lane, mask_poth, mask_crack)
+        for each subdirectory in the given path.
+
+        Args:
+            path (str): The directory path containing subdirectories with binary masks.
+            ext (str, optional): The file extension of the binary masks. Defaults to ".png".
+
+        Returns:
+            None
+        """
         for file_name in os.listdir(path):
-            sub_dir_path = path + file_name
+            sub_dir_path = os.path.join(path, file_name)
             if os.path.isdir(sub_dir_path):
                 masks = []
-                for image_name in os.listdir(sub_dir_path):
+                mask_lane = None
+                mask_poth = None
+                mask_crack = None
+                for image_name in sorted(os.listdir(sub_dir_path)):
                     if image_name.endswith(ext):
-                        img = cv2.imread(sub_dir_path + "/" + image_name, cv2.IMREAD_GRAYSCALE)
-                        masks.append(img)
-                new_mask = Utils.map_colors(masks)
+                        img = cv2.imread(os.path.join(sub_dir_path, image_name), cv2.IMREAD_GRAYSCALE)
+                        if "POTHOLE" in image_name.split("_")[-1]:
+                            mask_poth = img
+                        if "LANE" in image_name.split("_")[-1]:
+                            mask_lane = img
+                        if "CRACK" in image_name.split("_")[-1]:
+                            mask_crack = img
 
-        return new_mask
+                masks = [mask_lane, mask_poth, mask_crack]
+                new_mask = Utils.merge_binary_masks(masks)
+
+                cv2.imwrite(os.path.join(sub_dir_path, f"{file_name}_FINAL.png"), new_mask)
 
     @staticmethod
-    def rgb_to_onehot(rgb_image):
-        colormap = {k: v for k, v in enumerate(COLOR_MAP)}
-        num_classes = len(colormap)
-        shape = rgb_image.shape[:2] + (num_classes,)
-        encoded_image = np.zeros(shape, dtype=np.int8)
-        for i, cls in enumerate(colormap):
-            encoded_image[:, :, i] = np.all(rgb_image.reshape((-1, 3)) == colormap[i], axis=1).reshape(shape[:2])
+    def rgb_to_onehot(rgb_image: np.ndarray) -> np.array:
+        """
+        Faz one-hot encoding de uma imagem RGB com base em uma lista de cores.
+
+        Args:
+            image (numpy.ndarray): Array numpy contendo a imagem RGB.
+            color_map (list): Lista de tuplas contendo as cores de cada classe.
+
+        Returns:
+            Um array numpy contendo a imagem one-hot encoded.
+            :param rgb_image:
+        """
+        # Cria um array numpy com as mesmas dimensões da imagem
+        height, width, _ = rgb_image.shape
+        num_classes = len(COLOR_MAP)
+        encoded_image = np.zeros((height, width, num_classes), dtype=np.uint8)
+
+        # Faz one-hot encoding de cada pixel
+        for i, color in enumerate(COLOR_MAP):
+            indices = (rgb_image == color).all(axis=2)
+            encoded_image[indices, i] = 1
+
         return encoded_image
 
     @staticmethod
-    def onehot_to_rgb(onehot):
-        colormap = {k: v for k, v in enumerate(COLOR_MAP)}
-        single_layer = np.argmax(onehot, axis=-1)
-        output = np.zeros(onehot.shape[:2] + (3,))
-        for k in colormap.keys():
-            output[single_layer == k] = colormap[k]
-        return np.uint8(output)
+    def onehot_to_rgb(onehot_image: np.ndarray) -> np.array:
+        """
+        Converte uma imagem one-hot encoded de volta para uma imagem RGB com cores correspondentes às classes.
+
+        Args:
+            onehot_image (numpy.ndarray): Array numpy contendo a imagem one-hot encoded.
+            color_map (list): Lista de tuplas contendo as cores de cada classe.
+
+        Returns:
+            Um array numpy contendo a imagem RGB com cores correspondentes às classes.
+        """
+        # Calcula o índice da classe para cada pixel
+        indices = np.argmax(onehot_image, axis=2)
+
+        # Cria um array numpy com as mesmas dimensões da imagem
+        height, width = indices.shape
+        decoded_image = np.zeros((height, width, 3), dtype=np.uint8)
+
+        # Preenche cada pixel com a cor correspondente à sua classe
+        for i, color in enumerate(COLOR_MAP):
+            indices_i = np.where(indices == i)
+            decoded_image[indices_i] = color
+
+        return decoded_image
 
     @staticmethod
-    def map_colors(x, **kwargs) -> np.array:
-        combined_im = 0
-        for index, image in enumerate(x, start=1):
-            mask = np.stack((image,) * 3, -1)
-            mask_rows, mask_cols = np.where(mask[:, :, 1] == 255)
-            mask[mask_rows, mask_cols, :] = COLOR_MAP[index]
-            combined_im += mask
+    def merge_binary_masks(mask_list: list) -> np.ndarray:
+        """
+        Junta uma lista de imagens de máscaras binárias em uma só, mapeando as classes para cores específicas.
 
-        if kwargs.get("visualize"):
-            b, g, r = cv2.split(combined_im)
-            fig = plt.figure(figsize=(12, 3))
-            ax1 = fig.add_subplot(1, 3, 1)
-            ax1.imshow(np.stack((b,) * 3, -1))
-            ax2 = fig.add_subplot(1, 3, 2)
-            ax2.imshow(np.stack((g,) * 3, -1))
-            ax3 = fig.add_subplot(1, 3, 3)
-            ax3.imshow(np.stack((r,) * 3, -1))
-            plt.show()
+        Args:
+            mask_list (list): Lista contendo as máscaras binárias de cada classe.
 
-        return combined_im
+        Returns:
+            Um array numpy contendo a imagem mesclada com as máscaras.
+        """
+        # Cria uma matriz vazia para a imagem mesclada
+        height, width = mask_list[0].shape[:2]
+        merged = np.zeros((height, width, 3), dtype=np.uint8)
+
+        # Aplica as cores às máscaras na imagem colorida, misturando as cores
+        for i, img in enumerate(mask_list):
+            merged[img != 0] = COLOR_MAP[i + 1]
+
+        # Retorna a imagem resultante
+        return merged
+
+    @staticmethod
+    def merge_masks(image: np.ndarray, mask: np.ndarray):
+        """
+        Mescla a imagem original com a máscara, mapeando as classes para cores específicas.
+
+        Args:
+            image (numpy.ndarray): Array numpy contendo a imagem original.
+            mask (numpy.ndarray): Array numpy contendo a máscara one-hot encoded.
+
+        Returns:
+            Um array numpy contendo a imagem mesclada com a máscara.
+        """
+        alpha = 0.5  # Define a transparência da máscara
+        merged = cv2.addWeighted(image, alpha, mask, alpha, 0)
+
+        return merged
