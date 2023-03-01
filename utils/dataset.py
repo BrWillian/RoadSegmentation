@@ -2,10 +2,13 @@
 @Author Willian Antunes
 """
 
-from typing import Tuple
+from typing import Tuple, Generator
 import numpy as np
 from numpy import ndarray
 import cv2
+from utils.utils import Utils
+import os
+from pathlib import Path
 
 
 class DatasetLoader:
@@ -28,7 +31,7 @@ class DatasetLoader:
         self.horizontal_flip = horizontal_flip
         self.randomShiftScaleRotate = randomShiftScaleRotate
 
-    def flow_from_directory(self, path: str, batch_size: int, target_size: Tuple[int, int] = (None, None)):
+    def flow_from_directory(self, path: str, batch_size: int, target_size: Tuple[int, int] = (None, None)) -> Generator:
         """
         Generate batches of augmented data from the images in a directory.
 
@@ -40,7 +43,35 @@ class DatasetLoader:
         Returns:
             A generator that yields batches of augmented data.
         """
-        pass
+        assert (os.path.exists(os.path.join(path, "images")) and os.path.exists(
+            os.path.join(path, "labels"))), "DATASET INVALID FORMAT"
+        images_path = os.path.join(path, "images")
+        masks_path = os.path.join(path, "labels")
+        images = Utils.get_imgs_from_directory(directory_path=images_path, sort=True)
+        masks = Utils.get_imgs_from_directory(directory_path=masks_path, sort=True)
+
+        while True:
+            indices = np.random.choice(len(images), batch_size)
+            batch_images = []
+            batch_masks = []
+
+            for id in indices:
+                image = cv2.imread(os.path.join(images_path, images[id]))
+                mask = cv2.imread(os.path.join(masks_path, masks[id]), cv2.IMREAD_UNCHANGED)
+
+                image = cv2.resize(image, target_size)
+                mask = cv2.resize(mask, target_size)
+
+                image = image * self.rescale
+                mask = Utils.rgb_to_onehot(mask)
+
+                batch_images.append(image)
+                batch_masks.append(np.expand_dims(mask, axis=-1))
+
+            batch_images = np.array(batch_images)
+            batch_masks = np.array(batch_masks)
+
+            yield batch_images, batch_masks
 
     @staticmethod
     def adjust_gamma(image: np.ndarray, gamma: Tuple[float, float] = (0.2, 1.0)) -> ndarray:
@@ -137,8 +168,10 @@ class DatasetLoader:
         return image, mask
 
     @staticmethod
-    def randomShiftScaleRotate(image: np.ndarray, mask: np.ndarray, shift_limit: Tuple[float, float] = (-0.0625, 0.0625),
-                               scale_limit: Tuple[float, float] = (-0.1, 0.1), rotate_limit: Tuple[int, int] = (-45, 45),
+    def randomShiftScaleRotate(image: np.ndarray, mask: np.ndarray,
+                               shift_limit: Tuple[float, float] = (-0.0625, 0.0625),
+                               scale_limit: Tuple[float, float] = (-0.1, 0.1),
+                               rotate_limit: Tuple[int, int] = (-45, 45),
                                aspect_limit: Tuple[int, int] = (0, 0), borderMode: int = cv2.BORDER_CONSTANT,
                                u: float = 0.5) -> Tuple[np.ndarray, np.ndarray]:
         """
